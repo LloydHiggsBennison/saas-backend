@@ -27,10 +27,15 @@ app.use(cors({
     origin: function (origin, callback) {
         // Permitir requests sin origin (como Postman o curl en desarrollo)
         if (!origin) return callback(null, true);
+
+        console.log('CORS Origin Check:', origin);
+        console.log('Allowed Origins:', allowedOrigins);
+
         if (allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
-        callback(new Error('No permitido por CORS'));
+        console.warn('CORS Blocked for origin:', origin);
+        callback(new Error('No permitido por CORS: ' + origin));
     },
     methods: ['GET', 'POST'],
     credentials: true
@@ -281,6 +286,29 @@ function generateFallbackPosts(businessType, count) {
 // const path = require('path');
 // app.use('/propiedadia', express.static(path.join(__dirname, '../PropiedadIA')));
 // app.use('/contenidoia', express.static(path.join(__dirname, '../ContenidoIA')));
+
+// ============================================
+// MANEJO DE ERRORES Y 404
+// ============================================
+
+// Error 404 handler
+app.use((req, res) => {
+    console.warn(`404 Not Found: ${req.method} ${req.url}`);
+    res.status(404).json({
+        error: 'Ruta no encontrada',
+        path: req.url,
+        method: req.method
+    });
+});
+
+// Error handler global
+app.use((err, req, res, next) => {
+    console.error('Global Error Handler:', err);
+    res.status(err.status || 500).json({
+        error: err.message || 'Error interno del servidor',
+        details: err.details || null
+    });
+});
 
 // ============================================
 // INICIAR SERVIDOR
