@@ -89,10 +89,10 @@ app.post('/api/propiedadia/generate', async (req, res) => {
         const prompt = buildPropertyPrompt({ propertyType, rooms, bathrooms, size, location, features, style });
 
         const models = [
+            'google/gemma-3-27b-it:free',
+            'google/gemma-2-27b-it:free',
             'meta-llama/llama-3.1-8b-instruct:free',
-            'mistralai/mistral-7b-instruct:free',
-            'google/gemma-7b-it:free',
-            'meta-llama/llama-3-8b-instruct:free'
+            'mistralai/mistral-7b-instruct:free'
         ];
 
         let lastError = null;
@@ -167,10 +167,10 @@ app.post('/api/contenidoia/generate', async (req, res) => {
         const prompt = buildContentPrompt({ businessType, businessDesc, tone, network, postCount: count });
 
         const models = [
+            'google/gemma-3-27b-it:free',
+            'google/gemma-2-27b-it:free',
             'meta-llama/llama-3.1-8b-instruct:free',
-            'mistralai/mistral-7b-instruct:free',
-            'google/gemma-7b-it:free',
-            'meta-llama/llama-3-8b-instruct:free'
+            'mistralai/mistral-7b-instruct:free'
         ];
 
         let lastError = null;
