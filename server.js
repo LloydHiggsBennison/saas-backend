@@ -88,41 +88,62 @@ app.post('/api/propiedadia/generate', async (req, res) => {
 
         const prompt = buildPropertyPrompt({ propertyType, rooms, bathrooms, size, location, features, style });
 
-        const response = await fetch(OPENROUTER_API, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://propiedadia.cl',
-                'X-Title': 'PropiedadIA'
-            },
-            body: JSON.stringify({
-                model: 'meta-llama/llama-3.1-8b-instruct:free',
-                messages: [
-                    {
-                        role: 'system',
-                        content: `Eres un experto copywriter inmobiliario chileno. Tu trabajo es crear descripciones atractivas y profesionales para propiedades en venta o arriendo. Usa un lenguaje persuasivo pero natural, destaca los beneficios y crea una conexión emocional con el comprador potencial. Incluye emojis apropiados pero no exageres. Escribe en español chileno.`
-                    },
-                    { role: 'user', content: prompt }
-                ],
-                max_tokens: 500,
-                temperature: 0.7
-            })
-        });
+        const models = [
+            'meta-llama/llama-3.1-8b-instruct:free',
+            'mistralai/mistral-7b-instruct:free',
+            'google/gemma-7b-it:free',
+            'meta-llama/llama-3-8b-instruct:free'
+        ];
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('OpenRouter error raw:', errorText);
-            let errorJson;
-            try { errorJson = JSON.parse(errorText); } catch (e) { errorJson = { message: errorText }; }
-            return res.status(response.status).json({
-                error: 'Error de OpenRouter',
-                details: errorJson.error?.message || errorJson.message || errorText
-            });
+        let lastError = null;
+        let description = '';
+
+        for (const modelId of models) {
+            try {
+                console.log(`Intentando PropiedadIA con: ${modelId}`);
+                const response = await fetch(OPENROUTER_API, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'Content-Type': 'application/json',
+                        'HTTP-Referer': 'https://inmodescribe.vercel.app',
+                        'X-Title': 'InmoDescribe'
+                    },
+                    body: JSON.stringify({
+                        model: modelId,
+                        messages: [
+                            {
+                                role: 'system',
+                                content: `Eres un experto copywriter inmobiliario chileno. Tu trabajo es crear descripciones atractivas y profesionales para propiedades en venta o arriendo. Usa un lenguaje persuasivo pero natural, destaca los beneficios y crea una conexión emocional con el comprador potencial. Incluye emojis apropiados pero no exageres. Escribe en español chileno.`
+                            },
+                            { role: 'user', content: prompt }
+                        ],
+                        max_tokens: 500,
+                        temperature: 0.7
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    description = data.choices[0]?.message?.content || '';
+                    if (description) break;
+                } else {
+                    lastError = await response.text();
+                    console.warn(`Fallo ${modelId}:`, lastError);
+                }
+            } catch (err) {
+                lastError = err.message;
+            }
         }
 
-        const data = await response.json();
-        const description = data.choices[0]?.message?.content || '';
+        if (!description) {
+            let errorJson;
+            try { errorJson = JSON.parse(lastError); } catch (e) { errorJson = { message: lastError }; }
+            return res.status(500).json({
+                error: 'Error de IA (Agotado)',
+                details: errorJson.error?.message || errorJson.message || lastError
+            });
+        }
 
         res.json({ success: true, description });
 
@@ -145,55 +166,74 @@ app.post('/api/contenidoia/generate', async (req, res) => {
         const count = Math.min(parseInt(postCount) || 5, 30); // Máximo 30 posts
         const prompt = buildContentPrompt({ businessType, businessDesc, tone, network, postCount: count });
 
-        const response = await fetch(OPENROUTER_API, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://contenidoia.cl',
-                'X-Title': 'ContenidoIA'
-            },
-            body: JSON.stringify({
-                model: 'google/gemma-7b-it:free',
-                messages: [
-                    {
-                        role: 'system',
-                        content: `Eres un experto en marketing de redes sociales y community management. 
-                        Creas contenido atractivo, con emojis apropiados y hashtags relevantes en español.
-                        Cada post debe ser único y variado en formato (pregunta, consejo, historia, promoción, etc.).
-                        Responde SOLO con un JSON array de objetos con formato: [{"content": "texto del post", "hashtags": ["#tag1", "#tag2"]}]`
-                    },
-                    { role: 'user', content: prompt }
-                ],
-                max_tokens: 2000,
-                temperature: 0.8
-            })
-        });
+        const models = [
+            'meta-llama/llama-3.1-8b-instruct:free',
+            'mistralai/mistral-7b-instruct:free',
+            'google/gemma-7b-it:free',
+            'meta-llama/llama-3-8b-instruct:free'
+        ];
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('OpenRouter error raw:', errorText);
-            let errorJson;
-            try { errorJson = JSON.parse(errorText); } catch (e) { errorJson = { message: errorText }; }
-            return res.status(response.status).json({
-                error: 'Error de OpenRouter',
-                details: errorJson.error?.message || errorJson.message || errorText
-            });
+        let lastError = null;
+        let posts = [];
+
+        for (const modelId of models) {
+            try {
+                console.log(`Intentando ContenidoIA con: ${modelId}`);
+                const response = await fetch(OPENROUTER_API, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'Content-Type': 'application/json',
+                        'HTTP-Referer': 'https://postfollower.vercel.app',
+                        'X-Title': 'Postfollower'
+                    },
+                    body: JSON.stringify({
+                        model: modelId,
+                        messages: [
+                            {
+                                role: 'system',
+                                content: `Eres un experto en marketing de redes sociales y community management. 
+                                Creas contenido atractivo, con emojis apropiados y hashtags relevantes en español.
+                                Cada post debe ser único y variado en formato (pregunta, consejo, historia, promoción, etc.).
+                                Responde SOLO con un JSON array de objetos con formato: [{"content": "texto del post", "hashtags": ["#tag1", "#tag2"]}]`
+                            },
+                            { role: 'user', content: prompt }
+                        ],
+                        max_tokens: 2000,
+                        temperature: 0.8
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const content = data.choices[0]?.message?.content || '';
+                    if (content) {
+                        try {
+                            const jsonMatch = content.match(/\[[\s\S]*\]/);
+                            if (jsonMatch) {
+                                posts = JSON.parse(jsonMatch[0]);
+                                if (posts.length > 0) break;
+                            }
+                        } catch (e) {
+                            console.warn('Fallo parse JSON posts:', e);
+                        }
+                    }
+                } else {
+                    lastError = await response.text();
+                    console.warn(`Fallo ${modelId}:`, lastError);
+                }
+            } catch (err) {
+                lastError = err.message;
+            }
         }
 
-        const data = await response.json();
-        const content = data.choices[0]?.message?.content || '';
-
-        // Intentar parsear JSON
-        let posts = [];
-        try {
-            const jsonMatch = content.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-                posts = JSON.parse(jsonMatch[0]);
-            }
-        } catch (e) {
-            // Fallback si no se puede parsear
-            posts = generateFallbackPosts(businessType, count);
+        if (posts.length === 0) {
+            let errorJson;
+            try { errorJson = JSON.parse(lastError); } catch (e) { errorJson = { message: lastError }; }
+            return res.status(500).json({
+                error: 'Error de IA (Agotado)',
+                details: errorJson.error?.message || errorJson.message || lastError
+            });
         }
 
         res.json({ success: true, posts });
