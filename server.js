@@ -97,7 +97,7 @@ app.post('/api/propiedadia/generate', async (req, res) => {
                 'X-Title': 'PropiedadIA'
             },
             body: JSON.stringify({
-                model: 'google/gemma-7b-it:free',
+                model: 'meta-llama/llama-3.1-8b-instruct:free',
                 messages: [
                     {
                         role: 'system',
