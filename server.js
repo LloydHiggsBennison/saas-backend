@@ -92,7 +92,7 @@ app.post('/api/propiedadia/generate', async (req, res) => {
                 'X-Title': 'PropiedadIA'
             },
             body: JSON.stringify({
-                model: 'mistralai/mistral-7b-instruct:free',
+                model: 'google/gemma-7b-it:free',
                 messages: [
                     {
                         role: 'system',
@@ -106,9 +106,14 @@ app.post('/api/propiedadia/generate', async (req, res) => {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            console.error('OpenRouter error:', error);
-            return res.status(500).json({ error: 'Error al generar la descripción' });
+            const errorText = await response.text();
+            console.error('OpenRouter error raw:', errorText);
+            let errorJson;
+            try { errorJson = JSON.parse(errorText); } catch (e) { errorJson = { message: errorText }; }
+            return res.status(response.status).json({
+                error: 'Error de OpenRouter',
+                details: errorJson.error?.message || errorJson.message || errorText
+            });
         }
 
         const data = await response.json();
@@ -117,8 +122,8 @@ app.post('/api/propiedadia/generate', async (req, res) => {
         res.json({ success: true, description });
 
     } catch (error) {
-        console.error('Error:', error.message);
-        res.status(500).json({ error: 'Error interno del servidor' });
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Error interno del servidor', details: error.message });
     }
 });
 
@@ -144,7 +149,7 @@ app.post('/api/contenidoia/generate', async (req, res) => {
                 'X-Title': 'ContenidoIA'
             },
             body: JSON.stringify({
-                model: 'mistralai/mistral-7b-instruct:free',
+                model: 'google/gemma-7b-it:free',
                 messages: [
                     {
                         role: 'system',
@@ -161,9 +166,14 @@ app.post('/api/contenidoia/generate', async (req, res) => {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            console.error('OpenRouter error:', error);
-            return res.status(500).json({ error: 'Error al generar el contenido' });
+            const errorText = await response.text();
+            console.error('OpenRouter error raw:', errorText);
+            let errorJson;
+            try { errorJson = JSON.parse(errorText); } catch (e) { errorJson = { message: errorText }; }
+            return res.status(response.status).json({
+                error: 'Error de OpenRouter',
+                details: errorJson.error?.message || errorJson.message || errorText
+            });
         }
 
         const data = await response.json();
@@ -184,8 +194,8 @@ app.post('/api/contenidoia/generate', async (req, res) => {
         res.json({ success: true, posts });
 
     } catch (error) {
-        console.error('Error:', error.message);
-        res.status(500).json({ error: 'Error interno del servidor' });
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Error interno del servidor', details: error.message });
     }
 });
 
