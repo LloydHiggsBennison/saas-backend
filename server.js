@@ -55,16 +55,59 @@ app.use('/api/', limiter);
 app.use(express.json({ limit: '10kb' }));
 
 // ============================================
-// OPENROUTER API PROXY
+// INAIA API PROXY
 // ============================================
 
-const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
-const API_KEY = process.env.OPENROUTER_API_KEY;
+const INAIA_API_URL = 'https://inaia.vercel.app/api/chat';
 
-// Validar que existe la API key
-if (!API_KEY) {
-    console.error('❌ ERROR: OPENROUTER_API_KEY no está configurada en .env');
-    process.exit(1);
+/**
+ * Adaptador para llamar a la API de Inaia
+ * @param {Array} messages - Array de mensajes en formato OpenAI
+ * @param {string} model - Modelo a usar: 'kimi', 'reasoning', 'cerebras', 'auto'
+ * @returns {Promise<string>} - Respuesta completa del modelo
+ */
+async function callInaiaAPI(messages, model = 'kimi') {
+    try {
+        // Crear un timeout de 30 segundos
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        const response = await fetch(INAIA_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                messages,
+                model
+            }),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Inaia API error (${response.status}): ${errorText}`);
+        }
+
+        // Inaia retorna streaming de texto plano, acumular toda la respuesta
+        const fullResponse = await response.text();
+
+        if (!fullResponse || fullResponse.trim() === '') {
+            throw new Error('Inaia returned empty response');
+        }
+
+        return fullResponse;
+
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            console.error('Inaia API timeout after 30 seconds');
+            throw new Error('Timeout: Inaia API no respondió en 30 segundos');
+        }
+        console.error('Error calling Inaia API:', error);
+        throw error;
+    }
 }
 
 // ============================================
@@ -88,60 +131,22 @@ app.post('/api/propiedadia/generate', async (req, res) => {
 
         const prompt = buildPropertyPrompt({ propertyType, rooms, bathrooms, size, location, features, style });
 
-        const models = [
-            'google/gemma-3-27b-it:free',
-            'google/gemma-2-27b-it:free',
-            'meta-llama/llama-3.1-8b-instruct:free',
-            'mistralai/mistral-7b-instruct:free'
+        console.log('[PROPIEDAD-IA] Usando Inaia con modelo: kimi');
+
+        const messages = [
+            {
+                role: 'system',
+                content: `Eres un experto copywriter inmobiliario chileno. Tu trabajo es crear descripciones atractivas y profesionales para propiedades en venta o arriendo. Usa un lenguaje persuasivo pero natural, destaca los beneficios y crea una conexión emocional con el comprador potencial. Incluye emojis apropiados pero no exageres. Escribe en español chileno.`
+            },
+            { role: 'user', content: prompt }
         ];
 
-        let lastError = null;
-        let description = '';
+        const description = await callInaiaAPI(messages, 'kimi');
 
-        for (const modelId of models) {
-            try {
-                console.log(`Intentando PropiedadIA con: ${modelId}`);
-                const response = await fetch(OPENROUTER_API, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${API_KEY}`,
-                        'Content-Type': 'application/json',
-                        'HTTP-Referer': 'https://inmodescribe.vercel.app',
-                        'X-Title': 'InmoDescribe'
-                    },
-                    body: JSON.stringify({
-                        model: modelId,
-                        messages: [
-                            {
-                                role: 'system',
-                                content: `Eres un experto copywriter inmobiliario chileno. Tu trabajo es crear descripciones atractivas y profesionales para propiedades en venta o arriendo. Usa un lenguaje persuasivo pero natural, destaca los beneficios y crea una conexión emocional con el comprador potencial. Incluye emojis apropiados pero no exageres. Escribe en español chileno.`
-                            },
-                            { role: 'user', content: prompt }
-                        ],
-                        max_tokens: 500,
-                        temperature: 0.7
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    description = data.choices[0]?.message?.content || '';
-                    if (description) break;
-                } else {
-                    lastError = await response.text();
-                    console.warn(`Fallo ${modelId}:`, lastError);
-                }
-            } catch (err) {
-                lastError = err.message;
-            }
-        }
-
-        if (!description) {
-            let errorJson;
-            try { errorJson = JSON.parse(lastError); } catch (e) { errorJson = { message: lastError }; }
+        if (!description || description.trim() === '') {
             return res.status(500).json({
-                error: 'Error de IA (Agotado)',
-                details: errorJson.error?.message || errorJson.message || lastError
+                error: 'Error de IA: Inaia no retornó una respuesta válida',
+                details: 'La respuesta está vacía'
             });
         }
 
@@ -166,73 +171,42 @@ app.post('/api/contenidoia/generate', async (req, res) => {
         const count = Math.min(parseInt(postCount) || 5, 30); // Máximo 30 posts
         const prompt = buildContentPrompt({ businessType, businessDesc, tone, network, postCount: count });
 
-        const models = [
-            'google/gemma-3-27b-it:free',
-            'google/gemma-2-27b-it:free',
-            'meta-llama/llama-3.1-8b-instruct:free',
-            'mistralai/mistral-7b-instruct:free'
+        console.log('[CONTENIDO-IA] Usando Inaia con modelo: reasoning');
+
+        const messages = [
+            {
+                role: 'system',
+                content: `Eres un experto en marketing de redes sociales y community management. 
+                Creas contenido atractivo, con emojis apropiados y hashtags relevantes en español.
+                Cada post debe ser único y variado en formato (pregunta, consejo, historia, promoción, etc.).
+                Responde SOLO con un JSON array de objetos con formato: [{"content": "texto del post", "hashtags": ["#tag1", "#tag2"]}]`
+            },
+            { role: 'user', content: prompt }
         ];
 
-        let lastError = null;
+        const content = await callInaiaAPI(messages, 'reasoning');
+
+        // Parsear el JSON de la respuesta
         let posts = [];
-
-        for (const modelId of models) {
-            try {
-                console.log(`Intentando ContenidoIA con: ${modelId}`);
-                const response = await fetch(OPENROUTER_API, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${API_KEY}`,
-                        'Content-Type': 'application/json',
-                        'HTTP-Referer': 'https://postfollower.vercel.app',
-                        'X-Title': 'Postfollower'
-                    },
-                    body: JSON.stringify({
-                        model: modelId,
-                        messages: [
-                            {
-                                role: 'system',
-                                content: `Eres un experto en marketing de redes sociales y community management. 
-                                Creas contenido atractivo, con emojis apropiados y hashtags relevantes en español.
-                                Cada post debe ser único y variado en formato (pregunta, consejo, historia, promoción, etc.).
-                                Responde SOLO con un JSON array de objetos con formato: [{"content": "texto del post", "hashtags": ["#tag1", "#tag2"]}]`
-                            },
-                            { role: 'user', content: prompt }
-                        ],
-                        max_tokens: 2000,
-                        temperature: 0.8
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const content = data.choices[0]?.message?.content || '';
-                    if (content) {
-                        try {
-                            const jsonMatch = content.match(/\[[\s\S]*\]/);
-                            if (jsonMatch) {
-                                posts = JSON.parse(jsonMatch[0]);
-                                if (posts.length > 0) break;
-                            }
-                        } catch (e) {
-                            console.warn('Fallo parse JSON posts:', e);
-                        }
-                    }
-                } else {
-                    lastError = await response.text();
-                    console.warn(`Fallo ${modelId}:`, lastError);
-                }
-            } catch (err) {
-                lastError = err.message;
+        try {
+            const jsonMatch = content.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                posts = JSON.parse(jsonMatch[0]);
             }
+        } catch (e) {
+            console.error('[CONTENIDO-IA] Error parseando JSON:', e);
+            return res.status(500).json({
+                error: 'Error parseando respuesta de IA',
+                details: e.message,
+                raw_response: content.substring(0, 200)
+            });
         }
 
         if (posts.length === 0) {
-            let errorJson;
-            try { errorJson = JSON.parse(lastError); } catch (e) { errorJson = { message: lastError }; }
             return res.status(500).json({
-                error: 'Error de IA (Agotado)',
-                details: errorJson.error?.message || errorJson.message || lastError
+                error: 'Error de IA: No se generaron posts válidos',
+                details: 'La respuesta no contiene un array JSON válido',
+                raw_response: content.substring(0, 200)
             });
         }
 
